@@ -13,12 +13,14 @@
    [sprog.input.mouse :refer [mouse-pos
                               mouse-present?]] 
    [pfield.fxhash-utils :refer [fxrand
-                                fxrand-int]]))
+                                fxrand-int
+                                fxchance]]))
    
-  
+; MAKE 3D 
+; 1 define 
 
-(def field-resolution (* 32 (fxrand-int 16)))
-(def particle-amount 512)
+(def field-resolution 256)
+(def particle-amount (fxrand-int 256 512))
 (def radius (/ 1 2048))
 
 (defonce gl-atom (atom nil))
@@ -26,9 +28,11 @@
 (defonce field-tex-atom (atom nil))
 (defonce trail-texs-atom (atom nil))
 
-(def log-atom (atom true))
-
 (def frame-atom (atom 0))
+
+(defn rotation [angle]
+  [(Math/cos angle) (- (Math/sin angle))
+   (Math/sin angle) (Math/cos angle)])
 
 
 (defn update-page! []
@@ -60,11 +64,7 @@
                   {}
                   0
                   (* 6 particle-amount particle-amount)
-                  {:target (first @trail-texs-atom)})
-    
-    (when (true? @log-atom)
-      (u/log resolution "when running program"))
-    (reset! log-atom false)
+                  {:target (first @trail-texs-atom)}) 
 
     (run-purefrag-shader! gl
                           s/trail-frag-source
@@ -95,7 +95,7 @@
     (reset! location-texs-atom [(create-u16-tex gl particle-amount)
                                 (create-u16-tex gl particle-amount)]) 
     
-    (u/log resolution "at tex creation")
+   
     (reset! trail-texs-atom [(create-f8-tex gl [gl.canvas.width gl.canvas.height])
                             (create-f8-tex gl [gl.canvas.width gl.canvas.height])]) 
 
@@ -104,14 +104,15 @@
                           particle-amount
                           {:floats {"size" [particle-amount
                                             particle-amount]}
-                           :ints {"seed" (rand-int 1000)}}
+                           :ints {"seed" (fxrand-int 1000)}}
                           {:target (first @location-texs-atom)})
 
     (run-purefrag-shader! gl
                           s/field-frag-source
                           field-resolution
                           {:floats {"size" [field-resolution
-                                            field-resolution]}}
+                                            field-resolution]}
+                           :matrices {"u_rotate" (rotation (* u/TAU -0.125))}}
                           {:target @field-tex-atom})
     (reset! frame-atom 0)))
 

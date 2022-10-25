@@ -7,32 +7,37 @@
             [pfield.fxhash-utils :refer [fxrand
                                          fxrand-int]])) 
 
+(def global-shader-keywords {:max (.toFixed
+                                    (dec (Math/pow 2 16))
+                                    1)
+                              :TAU (.toFixed u/TAU 12)
+                              :PI (.toFixed Math/PI 12)
+                              :TWO_PI (.toFixed (* Math/PI 2) 12)
+                              :HALF_PI (.toFixed (* Math/PI 0.5) 12)
+
+                              :octaves (+ 2 (fxrand-int 8))
+                              :hurst (fxrand)
+
+                              :octaves2 (+ 2 (fxrand-int 8))
+                              :hurst2 (fxrand)
+
+                              :speed (.toFixed (fxrand 0.0005 0.002) 12)
+                              :fade (.toFixed (+ 0.9 (fxrand 0.0999)) 12)
+
+                              :seed1 (fxrand 1000)
+                              :seed2 (fxrand 1000)
+
+                              :off1 (fxrand 50)
+                              :off2 (fxrand 50)
+
+                              :zoom "100.0"
+
+                              :fzoom  (.toFixed (fxrand 0.5 3) 12)
+                              :fzoom2 (.toFixed (fxrand 0.5 3) 12)})
+
 (def iglu-wrapper
   (partial iglu->glsl
-           {:max (.toFixed
-                  (dec (Math/pow 2 16))
-                  1)
-            :TAU (.toFixed u/TAU 12)
-            :PI (.toFixed Math/PI 12)
-            :TWO_PI (.toFixed (* Math/PI 2) 12)
-            :HALF_PI (.toFixed (* Math/PI 0.5) 12)
-            :octaves (+ 2 (fxrand-int 8))
-            :hurst (fxrand)
-
-            :octaves2 (+ 2 (fxrand-int 8))
-            :hurst2 (fxrand)
-
-            :speed (u/log (.toFixed (fxrand 0.0008 0.002) 12))
-
-            :seed1 (fxrand 100)
-            :seed2 (fxrand 100)
-
-            :off1 (fxrand 50)
-            :off2 (fxrand 50)
-
-            :zoom "100.0"
-            :fzoom  (.toFixed (fxrand 0.5 3) 12)
-            :fzoom2 (.toFixed (fxrand 0.5 3) 12)}))
+           (u/log-tables global-shader-keywords)))
 
 (def render-frag-source
   (iglu-wrapper
@@ -64,7 +69,7 @@
      {main
       ([]
        (=vec2 pos (/ gl_FragCoord.xy size))
-       (= fragColor (* (vec4 (texture tex pos)) ".9")))}}))
+       (= fragColor (* (vec4 (texture tex pos)) :fade)))}}))
 
 (def particle-vert-source-u16
   (iglu-wrapper
@@ -135,7 +140,7 @@
        (=float dist (distance pos particlePos))
        ("if" (> dist radius)
              "discard")
-       (= fragColor (texture tex (vec2 0 (+ (* (atan v_color) "50.") :PI))
+       (= fragColor (texture tex (vec2 0 (/ (+ (atan (/ v_color.y v_color.x)) :HALF_PI) :PI))
                              #_(+ particlePos (vec2 (* (cos (* particlePos.x :off1)) ".2")
                                                   (* (sin (* particlePos.y :off1)) ".2")))
                              #_(vec2 (/ "1." (.x (vec2 (textureSize tex 0))))
@@ -188,7 +193,7 @@
 
                                 (vec2 (+ data (* field :speed)))) :max)
 
-                            (* (+ (* (* field :speed) ".5") ".5") :max))))}}))
+                            (* (+ (* field ".5") ".5") :max))))}}))
 
 
 (def field-frag-source
@@ -198,7 +203,8 @@
    '{:version "300 es"
      :precision {float highp
                  usampler2D highp}
-     :uniforms {size vec2}
+     :uniforms {size vec2
+                u_rotate mat2}
      :outputs {fragColor uvec4}
      :signatures {main ([] void)}
      :functions {main
@@ -208,7 +214,7 @@
                                                  (+ (* (sin (* pos.y :fzoom)) ".5") ".5")
                                                  0
                                                  1)
-                                           :max)))
+                                           :max))) 
 
                   (= fragColor (uvec4 (* (vec4 (+ (* (fbm (vec3 (* pos :fzoom) :seed1) :octaves :hurst)
                                                      ".5")
