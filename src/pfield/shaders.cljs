@@ -12,13 +12,17 @@
            {:max (.toFixed
                   (dec (Math/pow 2 16))
                   1)
+            :TAU (.toFixed u/TAU 12)
+            :PI (.toFixed Math/PI 12)
+            :TWO_PI (.toFixed (* Math/PI 2) 12)
+            :HALF_PI (.toFixed (* Math/PI 0.5) 12)
             :octaves (+ 2 (fxrand-int 8))
             :hurst (fxrand)
 
             :octaves2 (+ 2 (fxrand-int 8))
             :hurst2 (fxrand)
 
-            :speed (fxrand 0.0005 0.001)
+            :speed (u/log (.toFixed (fxrand 0.0008 0.002) 12))
 
             :seed1 (fxrand 100)
             :seed2 (fxrand 100)
@@ -27,8 +31,40 @@
             :off2 (fxrand 50)
 
             :zoom "100.0"
-            :fzoom (u/log (.toFixed (fxrand 0.5 5) 12))
-            :fzoom2 (u/log (.toFixed (fxrand 0.5 5) 12))}))
+            :fzoom  (.toFixed (fxrand 0.5 3) 12)
+            :fzoom2 (.toFixed (fxrand 0.5 3) 12)}))
+
+(def render-frag-source
+  (iglu-wrapper
+   '{:version "300 es"
+     :precision {float highp
+                 int highp
+                 sampler2D highp}
+     :uniforms {size vec2
+                tex sampler2D}
+     :outputs {fragColor vec4}
+     :signatures {main ([] void)}
+     :functions
+     {main
+      ([]
+       (=vec2 pos (/ gl_FragCoord.xy size)) 
+       (= fragColor (texture tex pos)))}}))
+
+(def trail-frag-source
+  (iglu-wrapper
+   '{:version "300 es"
+     :precision {float highp
+                 int highp
+                 sampler2D highp}
+     :uniforms {size vec2
+                tex sampler2D}
+     :outputs {fragColor vec4}
+     :signatures {main ([] void)}
+     :functions
+     {main
+      ([]
+       (=vec2 pos (/ gl_FragCoord.xy size))
+       (= fragColor (* (vec4 (texture tex pos)) ".9")))}}))
 
 (def particle-vert-source-u16
   (iglu-wrapper
@@ -99,7 +135,9 @@
        (=float dist (distance pos particlePos))
        ("if" (> dist radius)
              "discard")
-       (= fragColor (texture tex (+ particlePos (* (rand (* pos :off1)) ".1"))
+       (= fragColor (texture tex (vec2 0 (+ (* (atan v_color) "50.") :PI))
+                             #_(+ particlePos (vec2 (* (cos (* particlePos.x :off1)) ".2")
+                                                  (* (sin (* particlePos.y :off1)) ".2")))
                              #_(vec2 (/ "1." (.x (vec2 (textureSize tex 0))))
                                      (/ particlePos.y "1.")))))}}))
 
@@ -150,7 +188,7 @@
 
                                 (vec2 (+ data (* field :speed)))) :max)
 
-                           (vec2 (* (+ (* (* field :speed) ".5") ".5") :max)))))}}))
+                            (* (+ (* (* field :speed) ".5") ".5") :max))))}}))
 
 
 (def field-frag-source
@@ -175,10 +213,10 @@
                   (= fragColor (uvec4 (* (vec4 (+ (* (fbm (vec3 (* pos :fzoom) :seed1) :octaves :hurst)
                                                      ".5")
                                                   ".5")
-                                               (+ (* (fbm (vec3 (* pos.yx :fzoom2) :seed1) :octaves :hurst)
+                                               (+ (* (fbm (vec3 (* pos.yx :fzoom) :seed1) :octaves :hurst)
                                                      ".5")
                                                   ".5")
-                                               (+ (* (fbm (vec3 (* pos :fzoom) :seed2) :octaves :hurst)
+                                               (+ (* (fbm (vec3 (* pos :fzoom2) :seed2) :octaves :hurst)
                                                      ".5")
                                                   ".5")
                                                (+ (* (fbm (vec3 (* pos.yx :fzoom2) :seed2) :octaves :hurst)

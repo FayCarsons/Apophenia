@@ -7,23 +7,26 @@
                              maximize-canvas]]
    [sprog.webgl.shaders :refer [run-purefrag-shader!
                                 run-shaders!]]
-   [sprog.webgl.textures :refer [create-u16-tex]] 
+   [sprog.webgl.textures :refer [create-u16-tex
+                                 create-f8-tex]] 
    [sprog.webgl.textures :refer [html-image-texture]]
    [sprog.input.mouse :refer [mouse-pos
-                              mouse-present?]]
-   [sprog.iglu.core :refer [iglu->glsl]]
+                              mouse-present?]] 
    [pfield.fxhash-utils :refer [fxrand
                                 fxrand-int]]))
    
   
 
 (def field-resolution (* 32 (fxrand-int 16)))
-(def particle-amount 500)
+(def particle-amount 512)
 (def radius (/ 1 2048))
 
 (defonce gl-atom (atom nil))
 (defonce location-texs-atom (atom nil))
 (defonce field-tex-atom (atom nil))
+(defonce trail-texs-atom (atom nil))
+
+(def log-atom (atom true))
 
 (def frame-atom (atom 0))
 
@@ -33,13 +36,12 @@
         resolution [gl.canvas.width gl.canvas.height]]
 
     (maximize-canvas gl.canvas #_{:max-pixel-ratio 1})
-
     (run-purefrag-shader! gl
                           s/logic-frag-source
                           particle-amount
                           {:floats {"size" [particle-amount
                                             particle-amount]
-                                    "mouse" (if (mouse-present?) 
+                                    "mouse" (if (mouse-present?)
                                               (mouse-pos)
                                               [0 0])}
                            :textures {"locationTex" (first @location-texs-atom)
@@ -52,27 +54,50 @@
                   resolution
                   {:textures {"particleTex" (first @location-texs-atom)
                               "tex" (html-image-texture gl
-                                                        "img"
-                                                        #_{:wrap-mode :nearest})}
+                                                        "img")}
                    :floats {"size" resolution
                             "radius" radius}}
                   {}
                   0
-                  (* 6 particle-amount particle-amount))
+                  (* 6 particle-amount particle-amount)
+                  {:target (first @trail-texs-atom)})
+    
+    (when (true? @log-atom)
+      (u/log resolution "when running program"))
+    (reset! log-atom false)
+
+    (run-purefrag-shader! gl
+                          s/trail-frag-source
+                          [gl.canvas.width gl.canvas.height]
+                          {:floats {"size" [gl.canvas.width gl.canvas.height]}
+                           :textures {"tex" (first @trail-texs-atom)}}
+                          {:target (second @trail-texs-atom)})
+
+    (run-purefrag-shader! gl
+                          s/render-frag-source
+                          [gl.canvas.width gl.canvas.height]
+                          {:floats {"size" [gl.canvas.width gl.canvas.height]}
+                           :textures {"tex" (first @trail-texs-atom)}})
 
     (swap! location-texs-atom reverse)
+    (swap! trail-texs-atom reverse)
     (swap! frame-atom inc)
     (js/requestAnimationFrame update-page!)))
 
 (defn init []
   (let [gl (create-gl-canvas true)
-        resolution [gl.canvas.width gl.canvas.height]]
+        resolution [gl.canvas.width gl.canvas.height]] 
     (reset! gl-atom gl)
+    (maximize-canvas gl.canvas)
 
     (reset! field-tex-atom (create-u16-tex gl field-resolution))
 
     (reset! location-texs-atom [(create-u16-tex gl particle-amount)
-                                (create-u16-tex gl particle-amount)])
+                                (create-u16-tex gl particle-amount)]) 
+    
+    (u/log resolution "at tex creation")
+    (reset! trail-texs-atom [(create-f8-tex gl [gl.canvas.width gl.canvas.height])
+                            (create-f8-tex gl [gl.canvas.width gl.canvas.height])]) 
 
     (run-purefrag-shader! gl
                           s/init-frag-source
