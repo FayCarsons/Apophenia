@@ -3,57 +3,71 @@
             [sprog.iglu.chunks.noise :refer [simplex-3d-chunk
                                              get-fbm-chunk
                                              rand-chunk]]
+            [sprog.iglu.chunks.misc :refer [rescale-chunk]]
+            [sprog.iglu.chunks.postprocessing :refer [get-bloom-chunk
+                                                      star-neighborhood]]
             [sprog.iglu.core :refer [iglu->glsl]]
             [pfield.fxhash-utils :refer [fxrand
                                          fxrand-int]])) 
 
-(def global-shader-keywords {:max (.toFixed
-                                    (dec (Math/pow 2 16))
-                                    1)
-                              :TAU (.toFixed u/TAU 12)
-                              :PI (.toFixed Math/PI 12)
-                              :TWO_PI (.toFixed (* Math/PI 2) 12)
-                              :HALF_PI (.toFixed (* Math/PI 0.5) 12)
+(def global-shader-keywords {:max (dec (Math/pow 2 16))
+                                   
+                             :TAU u/TAU 
+                             :PI Math/PI
+                             :TWO_PI (* Math/PI 2)
+                             :HALF_PI (* Math/PI 0.5)
 
-                              :octaves (+ 2 (fxrand-int 8))
-                              :hurst (fxrand)
+                             :octaves (str (+ 2 (fxrand-int 20)))
+                             :hurst (fxrand 1.5)
 
-                              :octaves2 (+ 2 (fxrand-int 8))
-                              :hurst2 (fxrand)
+                             :octaves2 (str (+ 2 (fxrand-int 20)))
+                             :hurst2 (fxrand 1.5)
 
-                              :speed (.toFixed (fxrand 0.0005 0.002) 12)
-                              :fade (.toFixed (+ 0.9 (fxrand 0.0999)) 12)
+                             :speed  (fxrand 0.001 0.005) 
+                             :acc 0.005 
+                             :damp (fxrand 0.98 0.99) 
 
-                              :seed1 (fxrand 1000)
-                              :seed2 (fxrand 1000)
+                             :fade (fxrand 0.95 0.9999)
 
-                              :off1 (fxrand 50)
-                              :off2 (fxrand 50)
+                             :color-offset (fxrand 1 3)
 
-                              :zoom "100.0"
+                             :time-factor 0.0001
 
-                              :fzoom  (.toFixed (fxrand 0.5 3) 12)
-                              :fzoom2 (.toFixed (fxrand 0.5 3) 12)})
+                             :seed1 (fxrand 10000)
+                             :seed2 (fxrand 10000)
+                             :seed3 (fxrand 10000)
+                             :seed4 (fxrand 10000)
+
+                             :off1 (fxrand 50)
+                             :off2 (fxrand 50)
+
+                             :zoom 100
+
+                             :fzoom  (fxrand 0.5 5 0.75)
+                             :fzoom2 (fxrand 0.5 5 0.4)
+
+                             :step (/ 1 512)
+                             :intensity (fxrand 0.4 0.8 0.6)})
+
+(u/log-tables global-shader-keywords)
 
 (def iglu-wrapper
   (partial iglu->glsl
-           (u/log-tables global-shader-keywords)))
+            global-shader-keywords))
 
 (def render-frag-source
   (iglu-wrapper
+   (get-bloom-chunk :f8 (star-neighborhood 4) 0.5)
    '{:version "300 es"
      :precision {float highp
                  int highp
                  sampler2D highp}
      :uniforms {size vec2
-                tex sampler2D}
+                tex sampler2D
+                u_rotate vec2}
      :outputs {fragColor vec4}
-     :signatures {main ([] void)}
-     :functions
-     {main
-      ([]
-       (=vec2 pos (/ gl_FragCoord.xy size)) 
-       (= fragColor (texture tex pos)))}}))
+     :main ((=vec2 pos (/ gl_FragCoord.xy size))
+            (= fragColor (bloom tex pos :step :intensity)))}))
 
 (def trail-frag-source
   (iglu-wrapper
@@ -64,12 +78,9 @@
      :uniforms {size vec2
                 tex sampler2D}
      :outputs {fragColor vec4}
-     :signatures {main ([] void)}
-     :functions
-     {main
-      ([]
-       (=vec2 pos (/ gl_FragCoord.xy size))
-       (= fragColor (* (vec4 (texture tex pos)) :fade)))}}))
+     :main
+     ((=vec2 pos (/ gl_FragCoord.xy size))
+      (= fragColor (* (vec4 (texture tex pos)) :fade)))}))
 
 (def particle-vert-source-u16
   (iglu-wrapper
@@ -80,44 +91,40 @@
      :outputs {particlePos vec2
                v_color vec2}
      :uniforms {particleTex usampler2D
-                radius float}
-     :signatures {main ([] void)}
-     :functions
-     {main
-      ([]
-       (=int agentIndex (/ gl_VertexID 6))
-       (=int corner "gl_VertexID % 6")
+                radius float} 
+     :main ((=int agentIndex (/ gl_VertexID "6"))
+            (=int corner "gl_VertexID % 6")
 
-       (=ivec2 texSize (textureSize particleTex 0))
+            (=ivec2 texSize (textureSize particleTex i0))
 
-       (=vec2 texPos
-              (/ (+ "0.5" (vec2 (% agentIndex texSize.x)
-                                (/ agentIndex texSize.x)))
-                 (vec2 texSize)))
+            (=vec2 texPos
+                   (/ (+ 0.5 (vec2 (% agentIndex texSize.x)
+                                   (/ agentIndex texSize.x)))
+                      (vec2 texSize)))
 
-       (=uvec4 particleColor (texture particleTex texPos))
-       (= particlePos (/ (vec2 particleColor.xy) "65535.0"))
+            (=uvec4 particleColor (texture particleTex texPos))
+            (= particlePos (/ (vec2 particleColor.xy) 65535))
 
-       (= v_color (vec2 (/ (vec2 (.zw (texture particleTex texPos))) :max)))
+            (= v_color (vec2 (/ (vec2 (.zw (texture particleTex texPos))) :max)))
 
-       (= gl_Position
-          (vec4 (- (* (+ particlePos
-                         (* radius
-                            (- (* "2.0"
-                                  (if (|| (== corner 0)
-                                          (== corner 3))
-                                    (vec2 0 1)
-                                    (if (|| (== corner 1)
-                                            (== corner 4))
-                                      (vec2 1 0)
-                                      (if (== corner 2)
-                                        (vec2 0 0)
-                                        (vec2 1 1)))))
-                               "1.0")))
-                      "2.0")
-                   "1.0")
-                0
-                1)))}}))
+            (= gl_Position
+               (vec4 (- (* (+ particlePos
+                              (* radius
+                                 (- (* 2
+                                       (if (|| (== corner "0")
+                                               (== corner "3"))
+                                         (vec2 0 1)
+                                         (if (|| (== corner "1")
+                                                 (== corner "4"))
+                                           (vec2 1 0)
+                                           (if (== corner "2")
+                                             (vec2 0 0)
+                                             (vec2 1 1)))))
+                                    1)))
+                           2)
+                        1)
+                     0
+                     1)))}))
 
 (def particle-frag-source-f8
   (iglu-wrapper
@@ -128,27 +135,26 @@
                  sampler2D highp}
      :uniforms {radius float
                 size vec2
-                tex sampler2D}
+                tex sampler2D
+                frame int}
      :inputs {particlePos vec2
               v_color vec2}
      :outputs {fragColor vec4}
-     :signatures {main ([] void)}
-     :functions
-     {main
-      ([]
-       (=vec2 pos (/ gl_FragCoord.xy size))
-       (=float dist (distance pos particlePos))
-       ("if" (> dist radius)
-             "discard")
-       (= fragColor (texture tex (vec2 0 (/ (+ (atan (/ v_color.y v_color.x)) :HALF_PI) :PI))
-                             #_(+ particlePos (vec2 (* (cos (* particlePos.x :off1)) ".2")
-                                                  (* (sin (* particlePos.y :off1)) ".2")))
-                             #_(vec2 (/ "1." (.x (vec2 (textureSize tex 0))))
-                                     (/ particlePos.y "1.")))))}}))
+     :main
+     ((=vec2 pos (/ gl_FragCoord.xy size))
+      (=float time (* (float frame) :time-factor))
+      (=float dist (distance pos particlePos))
+      ("if" (> dist radius)
+            "discard")
+      (= fragColor (texture tex
+                            (vec2 :color-offset (/ (* (atan (- (* v_color 2) 1))
+                                        :PI)
+                                     :PI)))))}))
 
 (def logic-frag-source
   (iglu-wrapper
    rand-chunk
+   rescale-chunk
    '{:version "300 es"
      :precision {float highp
                  int highp
@@ -159,41 +165,47 @@
                 locationTex usampler2D
                 fieldTex usampler2D
                 frame int}
-     :signatures {main ([] void)}
-     :functions
-     {main
-      ([]
-       (=vec2 pos (/ gl_FragCoord.xy size))
-       (=float time (* (float frame) ".01"))
+     :main
+     ((=vec2 pos (/ gl_FragCoord.xy size))
+      (=float time (* (float frame) .01))
 
        ; bringing u16 position tex range down to 0-1
-       (=vec2 data (/ (vec2 (.xy (texture locationTex pos))) :max))
+      (=vec2 particlePos (/ (vec2 (.xy (texture locationTex pos))) :max))
 
        ; bringing u16 flowfield tex range down to -1 1
-       (=vec2 fieldData1 (- (* (/ (vec2 (.xy (texture fieldTex data)))
-                                  :max)
-                               "2.")
-                            "1."))
+      (=vec2 fieldData1 (- (* (/ (vec2 (.xy (texture fieldTex particlePos)))
+                                 :max)
+                              2)
+                           1))
 
-       (=vec2 fieldData2 (- (* (/ (vec2 (.zw (texture fieldTex data)))
-                                  :max)
-                               "2.")
-                            "1."))
+      (=vec2 fieldData2 (- (* (/ (vec2 (.zw (texture fieldTex particlePos)))
+                                 :max)
+                              2)
+                           1))
 
-       (=vec2 field (mix fieldData1 fieldData2 mouse.x))
+      (=vec2 field (mix fieldData1 fieldData2 mouse.x))
 
-       (= fragColor (uvec4 (* (if (|| (> (+ data.x (* field.x :speed)) "1.")
-                                      (> (+ data.y (* field.y :speed)) "1.")
-                                      (< (+ data.x (* field.x :speed)) "0.")
-                                      (< (+ data.y (* field.y :speed)) "0.")
-                                      (> (rand (* (+ pos data) "400.")) ".995"))
-                                (vec2
-                                 (rand (+ (* pos :off1) time))
-                                 (rand (+ (* pos :off2) time)))
+      (=vec2 particleVelocity (/ (vec2 (.zw (texture locationTex pos))) :max))
+      (= particleVelocity (- (* particleVelocity 2) 1))
+      (+= particleVelocity (* field :acc))
+      (*= particleVelocity :damp)
 
-                                (vec2 (+ data (* field :speed)))) :max)
 
-                            (* (+ (* field ".5") ".5") :max))))}}))
+
+      (= fragColor (uvec4 (* (vec4 (+ particlePos (* particleVelocity :speed))
+
+                                   (+ (* particleVelocity 0.5) 0.5)) :max)))
+
+      ("if" (|| (> (+ particlePos.x (* field.x :speed)) 1)
+                (> (+ particlePos.y (* field.y :speed)) 1)
+                (< (+ particlePos.x (* field.x :speed)) 0)
+                (< (+ particlePos.y (* field.y :speed)) 0)
+                (> (rand (* (+ pos particlePos) 400)) 0.99))
+            (= fragColor (uvec4 (* (vec4
+                                    (rand (+ (* pos :zoom) time))
+                                    (rand (+ (* pos.yx :zoom) time))
+                                    0.5
+                                    0.5) :max)))))}))
 
 
 (def field-frag-source
@@ -203,32 +215,46 @@
    '{:version "300 es"
      :precision {float highp
                  usampler2D highp}
-     :uniforms {size vec2
-                u_rotate mat2}
-     :outputs {fragColor uvec4}
-     :signatures {main ([] void)}
-     :functions {main
-                 ([]
-                  (=vec2 pos (/ gl_FragCoord.xy size))
-                  #_(= fragColor (uvec4 (* (vec4 (+ (* (cos (* pos.x :fzoom)) ".5") ".5")
-                                                 (+ (* (sin (* pos.y :fzoom)) ".5") ".5")
-                                                 0
-                                                 1)
-                                           :max))) 
+     :uniforms {size vec2}
+     :outputs {fragColor uvec4} 
+     :main ((=vec2 pos (/ gl_FragCoord.xy size))
+            (=float angle (* :TAU -0.125))
+            (=mat2 rotation  (mat2 (cos angle) (- 0 (sin angle))
+                                   (sin angle) (cos angle)))
+            (= pos (- (* pos 2) 1))
+            (*= pos rotation)
+            (= pos (* 0.5 (+ 1 pos)))
 
-                  (= fragColor (uvec4 (* (vec4 (+ (* (fbm (vec3 (* pos :fzoom) :seed1) :octaves :hurst)
-                                                     ".5")
-                                                  ".5")
-                                               (+ (* (fbm (vec3 (* pos.yx :fzoom) :seed1) :octaves :hurst)
-                                                     ".5")
-                                                  ".5")
-                                               (+ (* (fbm (vec3 (* pos :fzoom2) :seed2) :octaves :hurst)
-                                                     ".5")
-                                                  ".5")
-                                               (+ (* (fbm (vec3 (* pos.yx :fzoom2) :seed2) :octaves :hurst)
-                                                     ".5")
-                                                  ".5"))
-                                         :max))))}}))
+            (=vec4 fieldValue
+                   (vec4 (+ (* (fbm (vec3 (* pos :fzoom) :seed1) 
+                                    :octaves 
+                                    :hurst)
+                               0.5)
+                            0.5)
+                         (+ (* (fbm (vec3 (* pos.yx :fzoom) :seed1) 
+                                    :octaves 
+                                    :hurst)
+                               0.5)
+                            0.5)
+                         (+ (* (fbm (vec3 (* pos :fzoom2) :seed2) 
+                                    :octaves2 
+                                    :hurst2)
+                               0.5)
+                            0.5)
+                         (+ (* (fbm (vec3 (* pos.yx :fzoom2) :seed2) 
+                                    :octaves2 
+                                    :hurst2)
+                               0.5)
+                            0.5)))
+            
+            #_(=vec4 fieldValue (vec4 1 0 0 1))
+
+            (= fieldValue (-  (* fieldValue 2) 1))
+            (*= fieldValue.xy  (inverse rotation))
+            (*= fieldValue.zw  (inverse rotation))
+            (= fieldValue (* (+ fieldValue 1) 0.5))
+
+            (= fragColor (uvec4 (* fieldValue :max))))}))
 
 (def init-frag-source
   (iglu-wrapper
@@ -238,30 +264,10 @@
                  usampler2D highp}
      :uniforms {size vec2
                 seed int}
-     :outputs {fragColor uvec4}
-     :signatures {main ([] void)}
-     :functions {main
-                 ([]
-                  (=vec2 pos (/ gl_FragCoord.xy size))
-
-                  #_(= fragColor (uvec4 (* (vec4
-                                            (+ (*
-                                                (fbm (vec3 (* pos :zoom) seed)
-                                                     :octaves
-                                                     :hurst)
-                                                ".5")
-                                               ".5")
-                                            (+ (*
-                                                (fbm (vec3 (* pos.yx :zoom) seed)
-                                                     :octaves
-                                                     :hurst)
-                                                ".5")
-                                               ".5")
-                                            0
-                                            1)
-                                           :max)))
+     :outputs {fragColor uvec4} 
+     :main ((=vec2 pos (/ gl_FragCoord.xy size)) 
 
                   (= fragColor (uvec4 (* (vec4 (rand (* pos :zoom))
                                                (rand (* pos.yx :zoom))
-                                               0
-                                               1) :max))))}}))
+                                               0.5
+                                               0.5) :max))))}))

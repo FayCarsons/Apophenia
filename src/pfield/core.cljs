@@ -4,42 +4,61 @@
    [sprog.dev.startup]
    [sprog.util :as u]
    [sprog.dom.canvas :refer [create-gl-canvas
-                             maximize-canvas]]
+                             maximize-canvas
+                             save-image]]
    [sprog.webgl.shaders :refer [run-purefrag-shader!
                                 run-shaders!]]
-   [sprog.webgl.textures :refer [create-u16-tex
-                                 create-f8-tex]] 
-   [sprog.webgl.textures :refer [html-image-texture]]
+   [sprog.webgl.textures :refer [create-tex]] 
+   [sprog.webgl.textures :refer [html-image-tex]]
    [sprog.input.mouse :refer [mouse-pos
                               mouse-present?]] 
    [pfield.fxhash-utils :refer [fxrand
                                 fxrand-int
                                 fxchance]]))
-   
-; MAKE 3D 
-; 1 define 
+
+; HASHES
+; 'oogXGZphqB8KbHcydiZ1nxw5RmaLdQgHjzhujSU9pf8vaVJdQ6o'
+
+; slow opaque texture
+; 'ooNZfiJSwSmb7VYjZwkh9JD2wig6XqNDp4ktp9PDt6Nqy3Qv5Hu'
+
+; good one
+; 'oo9yr3QKAgYR4e4bA5KzBxG4zwwuqQxPrEzNMyuTpP3J1JSea3A'
+
+; based
+; 'oodgK5nrjtjhZfvpM1eAJBUXDM4vj1vgnr8ikYNjczxwBx946Lq'
 
 (def field-resolution 256)
-(def particle-amount (fxrand-int 256 512))
+(def particle-amount 256 #_(if (fxchance 0.5) 512 256))
 (def radius (/ 1 2048))
 
 (defonce gl-atom (atom nil))
 (defonce location-texs-atom (atom nil))
 (defonce field-tex-atom (atom nil))
 (defonce trail-texs-atom (atom nil))
+(defonce html-image-atom (atom nil))
 
 (def frame-atom (atom 0))
 
-(defn rotation [angle]
+#_(defn rotation [angle]
   [(Math/cos angle) (- (Math/sin angle))
    (Math/sin angle) (Math/cos angle)])
 
+(defn rotate-2D [angle-degrees]
+  (let [angle-radians (* angle-degrees (/ Math/PI 180))
+        s (Math/sin angle-radians)
+        c (Math/cos angle-radians)]
+    [s c]))
 
+(defonce log-atom (atom true))
 (defn update-page! []
+  
+  (reset! log-atom false)
   (let [gl @gl-atom
         resolution [gl.canvas.width gl.canvas.height]]
+    
 
-    (maximize-canvas gl.canvas #_{:max-pixel-ratio 1})
+    (maximize-canvas gl.canvas {:max-pixel-ratio 3})
     (run-purefrag-shader! gl
                           s/logic-frag-source
                           particle-amount
@@ -57,10 +76,10 @@
                   [s/particle-vert-source-u16 s/particle-frag-source-f8]
                   resolution
                   {:textures {"particleTex" (first @location-texs-atom)
-                              "tex" (html-image-texture gl
-                                                        "img")}
+                              "tex" @html-image-atom}
                    :floats {"size" resolution
-                            "radius" radius}}
+                            "radius" radius}
+                   :ints {"frame" @frame-atom}}
                   {}
                   0
                   (* 6 particle-amount particle-amount)
@@ -85,19 +104,21 @@
     (js/requestAnimationFrame update-page!)))
 
 (defn init []
-  (let [gl (create-gl-canvas true)
-        resolution [gl.canvas.width gl.canvas.height]] 
+  (let [gl (create-gl-canvas true)] 
     (reset! gl-atom gl)
     (maximize-canvas gl.canvas)
 
-    (reset! field-tex-atom (create-u16-tex gl field-resolution))
+    (reset! field-tex-atom (create-tex gl :u16 field-resolution))
 
-    (reset! location-texs-atom [(create-u16-tex gl particle-amount)
-                                (create-u16-tex gl particle-amount)]) 
+    (reset! location-texs-atom [(create-tex gl :u16 particle-amount)
+                                (create-tex gl :u16 particle-amount)]) 
     
    
-    (reset! trail-texs-atom [(create-f8-tex gl [gl.canvas.width gl.canvas.height])
-                            (create-f8-tex gl [gl.canvas.width gl.canvas.height])]) 
+    (reset! trail-texs-atom [(create-tex gl :f8 [gl.canvas.width gl.canvas.height])
+                            (create-tex gl :f8 [gl.canvas.width gl.canvas.height])]) 
+    
+    (reset! html-image-atom (html-image-tex gl
+                                                "img1"))
 
     (run-purefrag-shader! gl
                           s/init-frag-source
@@ -111,13 +132,13 @@
                           s/field-frag-source
                           field-resolution
                           {:floats {"size" [field-resolution
-                                            field-resolution]}
-                           :matrices {"u_rotate" (rotation (* u/TAU -0.125))}}
+                                            field-resolution]}}
                           {:target @field-tex-atom})
     (reset! frame-atom 0)))
 
 (defn ^:dev/after-load restart! []
   (js/document.body.removeChild (.-canvas @gl-atom))
+  (reset! log-atom true)
   (init))
 
 (defn pre-init []
