@@ -5,7 +5,10 @@
    [sprog.util :as u]
    [sprog.dom.canvas :refer [create-gl-canvas
                              maximize-canvas
-                             save-image]]
+                             maximize-gl-canvas
+                             square-maximize-gl-canvas
+                             save-image
+                             set-page-background-color]]
    [sprog.webgl.shaders :refer [run-purefrag-shader!
                                 run-shaders!]]
    [sprog.webgl.textures :refer [create-tex]] 
@@ -28,13 +31,22 @@
 ; based
 ; 'oodgK5nrjtjhZfvpM1eAJBUXDM4vj1vgnr8ikYNjczxwBx946Lq'
 
-(def field-resolution 256)
-(def particle-amount 256 #_(if (fxchance 0.5) 512 256))
+; HASH 11/2 migrated to most recent sprog
+; 'ooGtKoig8kFD7zuyNN8MuiDWyYm91YvABzBuWzLwaq9fW1LfWzG'
+
+; hASH 11/5
+; oodEDDmAAvwJ6ua5xoN9ijdD5CdQp2VEiRumSEk5mEUhhdHYNp1
+
+(def field-resolution (if (fxchance 0.25) 8 256))
+(def particle-amount 512 #_(if (fxchance 0.5) 512 256))
 (def radius (/ 1 2048))
+
+(def img-id (str "img" (fxrand-int 1 5)))
 
 (defonce gl-atom (atom nil))
 (defonce location-texs-atom (atom nil))
 (defonce field-tex-atom (atom nil))
+(defonce field2-tex-atom (atom nil))
 (defonce trail-texs-atom (atom nil))
 (defonce html-image-atom (atom nil))
 
@@ -44,21 +56,11 @@
   [(Math/cos angle) (- (Math/sin angle))
    (Math/sin angle) (Math/cos angle)])
 
-(defn rotate-2D [angle-degrees]
-  (let [angle-radians (* angle-degrees (/ Math/PI 180))
-        s (Math/sin angle-radians)
-        c (Math/cos angle-radians)]
-    [s c]))
 
-(defonce log-atom (atom true))
-(defn update-page! []
-  
-  (reset! log-atom false)
+(defn update-page! [] 
   (let [gl @gl-atom
         resolution [gl.canvas.width gl.canvas.height]]
-    
-
-    (maximize-canvas gl.canvas {:max-pixel-ratio 3})
+    (square-maximize-gl-canvas gl {:max-pixel-ratio 2})
     (run-purefrag-shader! gl
                           s/logic-frag-source
                           particle-amount
@@ -68,7 +70,8 @@
                                               (mouse-pos)
                                               [0 0])}
                            :textures {"locationTex" (first @location-texs-atom)
-                                      "fieldTex" @field-tex-atom}
+                                      "fieldTex" @field-tex-atom
+                                      "field2Tex" @field2-tex-atom}
                            :ints {"frame" @frame-atom}}
                           {:target (second @location-texs-atom)})
 
@@ -100,25 +103,26 @@
 
     (swap! location-texs-atom reverse)
     (swap! trail-texs-atom reverse)
-    (swap! frame-atom inc)
+    (swap! frame-atom inc) 
     (js/requestAnimationFrame update-page!)))
 
 (defn init []
-  (let [gl (create-gl-canvas true)] 
+  (let [gl (create-gl-canvas true)]
     (reset! gl-atom gl)
-    (maximize-canvas gl.canvas)
-
+    (square-maximize-gl-canvas gl) 
+    
     (reset! field-tex-atom (create-tex gl :u16 field-resolution))
+    (reset! field2-tex-atom (create-tex gl :u16 field-resolution))
 
     (reset! location-texs-atom [(create-tex gl :u16 particle-amount)
-                                (create-tex gl :u16 particle-amount)]) 
-    
-   
+                                (create-tex gl :u16 particle-amount)])
+
+
     (reset! trail-texs-atom [(create-tex gl :f8 [gl.canvas.width gl.canvas.height])
-                            (create-tex gl :f8 [gl.canvas.width gl.canvas.height])]) 
-    
+                             (create-tex gl :f8 [gl.canvas.width gl.canvas.height])])
+
     (reset! html-image-atom (html-image-tex gl
-                                                "img1"))
+                                            img-id))
 
     (run-purefrag-shader! gl
                           s/init-frag-source
@@ -133,12 +137,11 @@
                           field-resolution
                           {:floats {"size" [field-resolution
                                             field-resolution]}}
-                          {:target @field-tex-atom})
+                          {:target [@field-tex-atom @field2-tex-atom]})
     (reset! frame-atom 0)))
 
 (defn ^:dev/after-load restart! []
-  (js/document.body.removeChild (.-canvas @gl-atom))
-  (reset! log-atom true)
+  (js/document.body.removeChild (.-canvas @gl-atom)) 
   (init))
 
 (defn pre-init []
