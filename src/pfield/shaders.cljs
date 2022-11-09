@@ -58,19 +58,19 @@
                              :off1 (fxrand 50)
                              :off2 (fxrand 50)
 
-                             :zoom (fxrand 100 100000)
-                             :zoom2 (fxrand 100 100000)
+                             :zoom (fxrand 500 100000)
+                             :zoom2 (fxrand 500 100000)
 
                              :fzoom  (fxrand 0.5 (nth zoom-array 0))
                              :fzoom2 (fxrand 0.5 (nth zoom-array 1))
                              :fzoom3  (fxrand 0.5 (nth zoom-array 2))
                              :fzoom4 (fxrand 0.5 (nth zoom-array 3))
 
-                             :step (/ 1 256)
-                             :intensity (fxrand 0.7 0.95 0.6)})
+                             :step (/ 1 128)
+                             :intensity (fxrand 0.5 0.999 0.7)})
 
 #_(u/log-tables global-shader-keywords)
-(u/log zoom-array)
+
 
 (def iglu-wrapper
   (partial iglu->glsl
@@ -78,7 +78,7 @@
 
 (def render-frag-source
   (iglu-wrapper
-   (get-bloom-chunk :f8 (star-neighborhood 24 3) 0.999) 
+   (get-bloom-chunk :f8 (square-neighborhood 2 2) 1000) 
    '{:version "300 es"
      :precision {float highp
                  int highp
@@ -88,6 +88,7 @@
                 u_rotate vec2}
      :outputs {fragColor vec4}
      :main ((=vec2 pos (/ gl_FragCoord.xy size))
+            (= pos.y (- 1 pos.y))
             (= fragColor (bloom tex pos :step :intensity)))}))
 
 (def trail-frag-source
@@ -225,11 +226,11 @@
                               2)
                            1))
       
-      (=float subfade (rescale -1 1 0 1 (sympow (sin (* time 0.5)) 0.2)))
+      (=float subfade (rescale -1 1 0 1 (sympow (sin (* time 0.5)) 0.1)))
       (=vec2 subfield (mix fieldData1 fieldData2 subfade))
       (=vec2 subfield2 (mix fieldData3 fieldData4 subfade))
 
-      (=float leadfade (rescale -1 1 0 1 (sympow (sin (* time 0.25)) 0.1)))
+      (=float leadfade (rescale -1 1 0 1 (sympow (sin (* time 0.25)) 0.05)))
       (=vec2 field (mix subfield subfield2 leadfade))
 
       (=vec2 particleVelocity (/ (vec2 (.zw (texture locationTex pos))) :max))
@@ -247,7 +248,7 @@
                 (> (+ particlePos.y (* field.y :speed)) 1)
                 (< (+ particlePos.x (* field.x :speed)) 0)
                 (< (+ particlePos.y (* field.y :speed)) 0)
-                (> (rand (* (+ pos particlePos) 400)) 0.99))
+                (> (rand (* (+ pos particlePos) 400)) 0.995))
             (= fragColor (uvec4 (* (vec4
                                     (rand (+ (* pos :zoom) time))
                                     (rand (+ (* pos.yx :zoom2) time))
