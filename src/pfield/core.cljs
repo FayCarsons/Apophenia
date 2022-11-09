@@ -58,12 +58,17 @@
     (mapv (partial min max-tex-size)
           (canvas-resolution gl))))
 
+(defn expand-canvas []
+  (let [gl @gl-atom]
+    (maximize-canvas gl.canvas {:max-pixel-ratio 2})))
+
 (defn resize-handler! [_]
   (let [gl @gl-atom]
-    (maximize-canvas gl.canvas)
+    (expand-canvas)
     (let [resolution (max-texture-size)
           temp-texs [(create-tex gl :f8 resolution)
                      (create-tex gl :f8 resolution)]]
+      (u/log (str "resizing: " resolution))
       (run-purefrag-shader! gl
                             (identity-frag-source :f8)
                             resolution
@@ -77,7 +82,7 @@
   (let [gl @gl-atom
         resolution (max-texture-size)
         interval (/ 1000 60)]
-    (maximize-canvas gl.canvas {:max-pixel-ratio 2})
+    (expand-canvas)
     (run-purefrag-shader! gl
                           s/logic-frag-source
                           particle-amount
@@ -112,6 +117,7 @@
                            :textures {"tex" (first @trail-texs-atom)}}
                           {:target (second @trail-texs-atom)})
 
+    (u/log (str "rendering: " (max-texture-size)))
     (run-purefrag-shader! gl
                           s/render-frag-source
                           (max-texture-size)
@@ -124,17 +130,17 @@
     (js/requestAnimationFrame update-page!)))
 
 (defn init []
-  (let [gl (create-gl-canvas true)]
+  (let [gl (u/log (create-gl-canvas true))]
     (reset! gl-atom gl)
-    (maximize-canvas gl.canvas) 
-    
+    (expand-canvas)
+
     (reset! field-tex-atom (create-tex gl :u16 field-resolution))
     (reset! field2-tex-atom (create-tex gl :u16 field-resolution))
 
     (reset! location-texs-atom [(create-tex gl :u16 particle-amount)
                                 (create-tex gl :u16 particle-amount)])
 
-
+    (u/log (str "creating trail  texs:  " (max-texture-size)))
     (reset! trail-texs-atom [(create-tex gl :f8 (max-texture-size))
                              (create-tex gl :f8 (max-texture-size))])
 
