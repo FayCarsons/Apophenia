@@ -16,8 +16,14 @@
                                          fxchance
                                          fxshuffle]])) 
 
-(def zoom-array (fxshuffle (map #(/ % 2) 
-                                (map inc (range 10)))))
+(def zoom-array (fxshuffle (list 3 4 5 7)))
+
+(def img-id (str "img" (fxrand-int 1 7)))
+(def  bloom-max 
+  (if (or (= img-id "img1")
+          (= img-id "img6"))
+    0.65
+    1))
 
 (def global-shader-keywords {:max (dec (Math/pow 2 16))
 
@@ -38,15 +44,15 @@
                              :octaves4 (str (+ 2 (fxrand-int 20)))
                              :hurst4 (fxrand 1.5)
 
-                             :speed  (fxrand 0.001 0.006)
+                             :speed  (fxrand 0.002 0.006)
                              :acc 0.005
-                             :damp (fxrand 0.98 0.995 0.6)
+                             :damp (fxrand 0.983 0.99)
 
-                             :fade (fxrand 0.95 0.9999)
+                             :fade (fxrand 0.97 0.99)
 
                              :color-offset (fxrand 0.1 1)
-                             :color-mode (str (fxchance 0.33))
-                             :choose-field (str (fxchance 0.5))
+                             :color-mode (str (fxchance 0.5))
+                             
 
                              :time-factor 0.0001
 
@@ -67,9 +73,7 @@
                              :fzoom4 (fxrand 0.5 (nth zoom-array 3))
 
                              :step (/ 1 128)
-                             :intensity (fxrand 0.5 0.999 0.7)})
-
-#_(u/log-tables global-shader-keywords)
+                             :intensity (fxrand 0.7 bloom-max 0.7)})
 
 
 (def iglu-wrapper
@@ -78,7 +82,7 @@
 
 (def render-frag-source
   (iglu-wrapper
-   (get-bloom-chunk :f8 (square-neighborhood 2 2) 1000) 
+   (get-bloom-chunk :f8 (star-neighborhood 2) 5) 
    '{:version "300 es"
      :precision {float highp
                  int highp
@@ -88,7 +92,7 @@
                 u_rotate vec2}
      :outputs {fragColor vec4}
      :main ((=vec2 pos (/ gl_FragCoord.xy size))
-            (= pos.y (- 1 pos.y))
+            (= pos.y (- 1 pos.y)) 
             (= fragColor (bloom tex pos :step :intensity)))}))
 
 (def trail-frag-source
@@ -157,14 +161,12 @@
                  sampler2D highp}
      :uniforms {radius float
                 size vec2
-                tex sampler2D
-                frame int}
+                tex sampler2D}
      :inputs {particlePos vec2
               v_color vec2}
      :outputs {fragColor vec4}
      :main
-     ((=vec2 pos (/ gl_FragCoord.xy size))
-      (=float time (* (float frame) :time-factor))
+     ((=vec2 pos (/ gl_FragCoord.xy size)) 
       (=float dist (distance pos particlePos))
       ("if" (> dist radius)
             "discard")
@@ -173,9 +175,8 @@
       (=vec2 v1 (vec2 :color-offset (+ (/ (atan (/ y_vel x_vel))
                      :TAU)
                   0.5)))
-      (=vec2 v2 (vec2 (/ (* (atan (- (* v_color 2) 1)) :PI) :PI)))
-      (= fragColor (texture tex
-                            (if :color-mode v1 v2))))}))
+      (=vec2 v2 (vec2 (+ (* (atan (- (* v_color 2) 1)) :HALF_PI) :HALF_PI)))
+      (= fragColor (texture tex (- (vec2 1) (if :color-mode v1 v2)))))}))
 
 (def logic-frag-source
   (iglu-wrapper
@@ -192,10 +193,11 @@
                 locationTex usampler2D
                 fieldTex usampler2D
                 field2Tex usampler2D
-                frame int}
+                frame int
+                now float}
      :main
      ((=vec2 pos (/ gl_FragCoord.xy size))
-      (=float time (* (float frame) 0.005))
+      (=float time (* now 0.2))
 
 
 
@@ -226,11 +228,11 @@
                               2)
                            1))
       
-      (=float subfade (rescale -1 1 0 1 (sympow (sin (* time 0.5)) 0.1)))
+      (=float subfade (rescale -1 1 0 1 (sympow (sin (* time 0.5)) 0.05)))
       (=vec2 subfield (mix fieldData1 fieldData2 subfade))
       (=vec2 subfield2 (mix fieldData3 fieldData4 subfade))
 
-      (=float leadfade (rescale -1 1 0 1 (sympow (sin (* time 0.25)) 0.05)))
+      (=float leadfade (rescale -1 1 0 1 (sympow (sin (* time 0.25)) 0.01)))
       (=vec2 field (mix subfield subfield2 leadfade))
 
       (=vec2 particleVelocity (/ (vec2 (.zw (texture locationTex pos))) :max))
